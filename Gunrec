@@ -1,0 +1,1170 @@
+-- language: Lua, target: MMV (Roblox)
+-- gun mesh via SA pipeline. beam + bomb from dj's own scripts.
+-- bomb rainbow fixed.
+-- colours: Blue Red Pink Yellow Purple Black + Rainbow. client-side only.
+
+local Players     = game:GetService("Players")
+local RunService  = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+
+-- set to a 1x1 white decal id if you want SA-heavy bombs to tint flat
+local WHITE_ASSET_ID = ""
+
+local SWATCH = {
+    Blue   = Color3.fromRGB(30, 80, 180),
+    Red    = Color3.fromRGB(160, 25, 25),
+    Pink   = Color3.fromRGB(190, 60, 130),
+    Yellow = Color3.fromRGB(200, 160, 30),
+    Purple = Color3.fromRGB(110, 40, 180),
+    Black  = Color3.fromRGB(25, 25, 30),
+}
+
+local TINT = {
+    Blue   = Color3.fromRGB(25, 90, 230),
+    Red    = Color3.fromRGB(210, 30, 30),
+    Pink   = Color3.fromRGB(240, 70, 160),
+    Yellow = Color3.fromRGB(255, 200, 30),
+    Purple = Color3.fromRGB(150, 60, 240),
+    Black  = Color3.fromRGB(20, 20, 25),
+}
+
+local gun  = { colour = "Blue", rainbow = false, hue = 0, matrix_on = false, void_on = false }
+local beam = { colour = "Blue", rainbow = false, hue = 0, on = false }
+local bomb = { colour = "Blue", rainbow = false, hue = 0, on = false }
+
+local keep_tex = true
+local original = {}
+
+local FULL_H, MINI_H = 500, 40
+
+-- ============================================================
+-- UI
+-- ============================================================
+
+local function makeGui()
+    local old = PlayerGui:FindFirstChild("MatrixVoidRecolour")
+    if old then old:Destroy() end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "MatrixVoidRecolour"
+    gui.ResetOnSpawn = false
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.Parent = PlayerGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 280, 0, FULL_H)
+    frame.Position = UDim2.new(0, 20, 0.5, -FULL_H / 2)
+    frame.BackgroundColor3 = Color3.fromRGB(14, 22, 44)
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.Draggable = true
+    frame.ClipsDescendants = true
+    frame.Parent = gui
+
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 14)
+
+    local st = Instance.new("UIStroke", frame)
+    st.Color = Color3.fromRGB(60, 120, 210)
+    st.Thickness = 1.5
+    st.Transparency = 0.3
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -60, 0, 40)
+    title.Position = UDim2.new(0, 30, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "Matrix & Void Recolour  @ouxhiee"
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 14
+    title.TextColor3 = Color3.fromRGB(160, 200, 245)
+    title.Parent = frame
+
+    local minBtn = Instance.new("TextButton")
+    minBtn.Size = UDim2.new(0, 32, 0, 32)
+    minBtn.Position = UDim2.new(0, 4, 0, 4)
+    minBtn.BackgroundColor3 = Color3.fromRGB(50, 70, 110)
+    minBtn.Text = "-"
+    minBtn.Font = Enum.Font.GothamBold
+    minBtn.TextSize = 20
+    minBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    minBtn.BorderSizePixel = 0
+    minBtn.Parent = frame
+
+    Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 8)
+
+    local plusBtn = Instance.new("TextButton")
+    plusBtn.Size = UDim2.new(0, 32, 0, 32)
+    plusBtn.Position = UDim2.new(0, 4, 0, 4)
+    plusBtn.BackgroundColor3 = Color3.fromRGB(40, 170, 80)
+    plusBtn.Text = "+"
+    plusBtn.Font = Enum.Font.GothamBold
+    plusBtn.TextSize = 20
+    plusBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    plusBtn.BorderSizePixel = 0
+    plusBtn.Visible = false
+    plusBtn.Parent = frame
+
+    Instance.new("UICorner", plusBtn).CornerRadius = UDim.new(0, 8)
+
+    local body = Instance.new("Frame")
+    body.Size = UDim2.new(1, 0, 0, FULL_H - 40)
+    body.Position = UDim2.new(0, 0, 0, 40)
+    body.BackgroundTransparency = 1
+    body.Parent = frame
+
+    local tabBar = Instance.new("Frame")
+    tabBar.Size = UDim2.new(1, -30, 0, 34)
+    tabBar.Position = UDim2.new(0, 15, 0, 6)
+    tabBar.BackgroundColor3 = Color3.fromRGB(20, 30, 55)
+    tabBar.BorderSizePixel = 0
+    tabBar.Parent = body
+
+    Instance.new("UICorner", tabBar).CornerRadius = UDim.new(0, 8)
+
+    local function mkTab(text, xPos, xSize)
+        local t = Instance.new("TextButton")
+        t.Size = UDim2.new(xSize, 0, 1, 0)
+        t.Position = UDim2.new(xPos, 0, 0, 0)
+        t.BackgroundColor3 = Color3.fromRGB(20, 30, 55)
+        t.Text = text
+        t.Font = Enum.Font.GothamBold
+        t.TextSize = 13
+        t.TextColor3 = Color3.fromRGB(160, 200, 245)
+        t.BorderSizePixel = 0
+        t.AutoButtonColor = true
+        t.Parent = tabBar
+
+        Instance.new("UICorner", t).CornerRadius = UDim.new(0, 8)
+
+        return t
+    end
+
+    local tabGun  = mkTab("Gun", 0, 1 / 3)
+    local tabBeam = mkTab("Beam", 1 / 3, 1 / 3)
+    local tabBomb = mkTab("Bomb", 2 / 3, 1 / 3)
+
+    local function mkPage()
+        local p = Instance.new("Frame")
+        p.Size = UDim2.new(1, 0, 1, -46)
+        p.Position = UDim2.new(0, 0, 0, 46)
+        p.BackgroundTransparency = 1
+        p.Visible = false
+        p.Parent = body
+        return p
+    end
+
+    local pageGun  = mkPage()
+    local pageBeam = mkPage()
+    local pageBomb = mkPage()
+
+    pageGun.Visible = true
+
+    local function mkBtn(page, name, text, pos, size, colour)
+        local b = Instance.new("TextButton")
+        b.Name = name
+        b.Size = size
+        b.Position = pos
+        b.BackgroundColor3 = colour
+        b.Text = text
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 13
+        b.TextColor3 = Color3.fromRGB(255, 255, 255)
+        b.BorderSizePixel = 0
+        b.AutoButtonColor = true
+        b.Parent = page
+
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
+
+        return b
+    end
+
+    local function buildColourGrid(page, topY)
+        local W, H, GAP = 115, 34, 6
+        local COL = {15, 15 + W + GAP}
+        local ROW = {
+            topY,
+            topY + H + GAP,
+            topY + 2 * (H + GAP),
+            topY + 3 * (H + GAP)
+        }
+
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(1, -30, 0, 18)
+        lbl.Position = UDim2.new(0, 15, 0, topY - 23)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = "Colour"
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 12
+        lbl.TextColor3 = Color3.fromRGB(120, 160, 210)
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Parent = page
+
+        local order = {"Blue", "Red", "Pink", "Yellow", "Purple", "Black"}
+        local buttons = {}
+
+        for i, name in ipairs(order) do
+            local row = math.floor((i - 1) / 2) + 1
+            local col = ((i - 1) % 2) + 1
+
+            buttons[name] = mkBtn(
+                page,
+                name,
+                name,
+                UDim2.new(0, COL[col], 0, ROW[row]),
+                UDim2.new(0, W, 0, H),
+                SWATCH[name]
+            )
+        end
+
+        local rainbow = mkBtn(
+            page,
+            "Rainbow",
+            "Rainbow",
+            UDim2.new(0, COL[1], 0, ROW[4]),
+            UDim2.new(0, W * 2 + GAP, 0, H),
+            Color3.fromRGB(70, 70, 70)
+        )
+
+        return buttons, rainbow, ROW[4] + H + 15
+    end
+
+    -- GUN PAGE
+    local gunButtons, gunRainbow, gunAfterGrid = buildColourGrid(pageGun, 28)
+
+    local lblApply = Instance.new("TextLabel")
+    lblApply.Size = UDim2.new(1, -30, 0, 18)
+    lblApply.Position = UDim2.new(0, 15, 0, gunAfterGrid)
+    lblApply.BackgroundTransparency = 1
+    lblApply.Text = "Apply To"
+    lblApply.Font = Enum.Font.GothamBold
+    lblApply.TextSize = 12
+    lblApply.TextColor3 = Color3.fromRGB(120, 160, 210)
+    lblApply.TextXAlignment = Enum.TextXAlignment.Left
+    lblApply.Parent = pageGun
+
+    local yA = gunAfterGrid + 23
+
+    local matrixBtn = mkBtn(
+        pageGun,
+        "MatrixOn",
+        "MatrixScope: OFF",
+        UDim2.new(0, 15, 0, yA),
+        UDim2.new(1, -30, 0, 34),
+        Color3.fromRGB(30, 30, 50)
+    )
+
+    local voidBtn = mkBtn(
+        pageGun,
+        "VoidOn",
+        "VoidScope: OFF",
+        UDim2.new(0, 15, 0, yA + 40),
+        UDim2.new(1, -30, 0, 34),
+        Color3.fromRGB(30, 30, 50)
+    )
+
+    local texBtn = mkBtn(
+        pageGun,
+        "TexMode",
+        "Detail: KEEP",
+        UDim2.new(0, 15, 0, yA + 84),
+        UDim2.new(1, -30, 0, 34),
+        Color3.fromRGB(30, 100, 60)
+    )
+
+    -- BEAM PAGE
+    local beamButtons, beamRainbow, beamAfterGrid = buildColourGrid(pageBeam, 28)
+
+    local beamToggle = mkBtn(
+        pageBeam,
+        "BeamOn",
+        "Change Beam Colour: OFF",
+        UDim2.new(0, 15, 0, beamAfterGrid + 23),
+        UDim2.new(1, -30, 0, 34),
+        Color3.fromRGB(30, 30, 50)
+    )
+
+    -- BOMB PAGE
+    local bombButtons, bombRainbow, bombAfterGrid = buildColourGrid(pageBomb, 28)
+
+    local bombToggle = mkBtn(
+        pageBomb,
+        "BombOn",
+        "Change Bomb Colours: OFF",
+        UDim2.new(0, 15, 0, bombAfterGrid + 23),
+        UDim2.new(1, -30, 0, 34),
+        Color3.fromRGB(30, 30, 50)
+    )
+
+    return {
+        frame = frame,
+        body = body,
+        minBtn = minBtn,
+        plusBtn = plusBtn,
+
+        tabGun = tabGun,
+        tabBeam = tabBeam,
+        tabBomb = tabBomb,
+
+        pageGun = pageGun,
+        pageBeam = pageBeam,
+        pageBomb = pageBomb,
+
+        gunButtons = gunButtons,
+        gunRainbow = gunRainbow,
+
+        beamButtons = beamButtons,
+        beamRainbow = beamRainbow,
+        beamToggle = beamToggle,
+
+        bombButtons = bombButtons,
+        bombRainbow = bombRainbow,
+        bombToggle = bombToggle,
+
+        matrixBtn = matrixBtn,
+        voidBtn = voidBtn,
+        texBtn = texBtn,
+    }
+end
+
+local ui = makeGui()
+
+local function showTab(which)
+    ui.pageGun.Visible = which == "gun"
+    ui.pageBeam.Visible = which == "beam"
+    ui.pageBomb.Visible = which == "bomb"
+
+    ui.tabGun.BackgroundColor3 =
+        (which == "gun")
+        and Color3.fromRGB(45, 100, 200)
+        or Color3.fromRGB(20, 30, 55)
+
+    ui.tabBeam.BackgroundColor3 =
+        (which == "beam")
+        and Color3.fromRGB(80, 200, 255)
+        or Color3.fromRGB(20, 30, 55)
+
+    ui.tabBomb.BackgroundColor3 =
+        (which == "bomb")
+        and Color3.fromRGB(200, 130, 40)
+        or Color3.fromRGB(20, 30, 55)
+end
+
+showTab("gun")
+
+ui.tabGun.MouseButton1Click:Connect(function()
+    showTab("gun")
+end)
+
+ui.tabBeam.MouseButton1Click:Connect(function()
+    showTab("beam")
+end)
+
+ui.tabBomb.MouseButton1Click:Connect(function()
+    showTab("bomb")
+end)
+
+ui.minBtn.MouseButton1Click:Connect(function()
+    ui.frame.Size = UDim2.new(0, 280, 0, MINI_H)
+    ui.body.Visible = false
+    ui.minBtn.Visible = false
+    ui.plusBtn.Visible = true
+end)
+
+ui.plusBtn.MouseButton1Click:Connect(function()
+    ui.frame.Size = UDim2.new(0, 280, 0, FULL_H)
+    ui.body.Visible = true
+    ui.minBtn.Visible = true
+    ui.plusBtn.Visible = false
+end)
+
+-- ============================================================
+-- COLOUR
+-- ============================================================
+
+local function gunColour()
+    if gun.rainbow then
+        return Color3.fromHSV(gun.hue, 0.9, 1)
+    end
+
+    return TINT[gun.colour]
+end
+
+local function beamColour()
+    if beam.rainbow then
+        return Color3.fromHSV(beam.hue, 0.9, 1)
+    end
+
+    return TINT[beam.colour]
+end
+
+local function bombColour()
+    if bomb.rainbow then
+        return Color3.fromHSV(bomb.hue, 0.9, 1)
+    end
+
+    return TINT[bomb.colour]
+end
+
+-- ============================================================
+-- GUN PIPELINE
+-- ============================================================
+
+local function cacheOriginal(obj)
+    if original[obj] then return end
+
+    local entry = {parts = {}}
+
+    for _, d in ipairs(obj:GetDescendants()) do
+        if d:IsA("BasePart") then
+            table.insert(entry.parts, {
+                d,
+                d.Color,
+                d.Material,
+                d:IsA("MeshPart") and d.TextureID or ""
+            })
+        end
+    end
+
+    original[obj] = entry
+end
+
+local function restoreOriginal(obj)
+    local e = original[obj]
+    if not e then return end
+
+    for _, p in ipairs(e.parts) do
+        local inst, col, mat, tex = p[1], p[2], p[3], p[4]
+
+        if inst.Parent then
+            inst.Color = col
+
+            pcall(function()
+                inst.Material = mat
+            end)
+
+            if inst:IsA("MeshPart") then
+                pcall(function()
+                    inst.TextureID = tex
+                end)
+            end
+
+            local sa = inst:FindFirstChildOfClass("SurfaceAppearance")
+
+            if sa then
+                sa:Destroy()
+            end
+        end
+    end
+end
+
+local function toolVariant(tool)
+    local n = (
+        tool:GetAttribute("ItemName")
+        or tool:GetAttribute("ItemID")
+        or tool.Name
+        or ""
+    ):lower()
+
+    if n:find("matrix") then
+        return "matrix"
+    end
+
+    if n:find("void") then
+        return "void"
+    end
+
+    return nil
+end
+
+local function shouldTintTool(tool)
+    local v = toolVariant(tool)
+
+    if v == "matrix" and gun.matrix_on then
+        return true
+    end
+
+    if v == "void" and gun.void_on then
+        return true
+    end
+
+    return false
+end
+
+local function applyGunMesh(tool, colour)
+    cacheOriginal(tool)
+
+    local handle = tool:FindFirstChild("Handle")
+
+    if handle and handle:IsA("MeshPart") then
+        handle.Material = Enum.Material.SmoothPlastic
+        handle.Color = colour
+
+        local orig = original[tool]
+        local originalTex = ""
+
+        if orig then
+            for _, p in ipairs(orig.parts) do
+                if p[1] == handle then
+                    originalTex = p[4]
+                    break
+                end
+            end
+        end
+
+        if not originalTex or #originalTex == 0 then
+            originalTex = handle.TextureID
+        end
+
+        if keep_tex then
+            local sa = handle:FindFirstChildOfClass("SurfaceAppearance")
+
+            if not sa then
+                sa = Instance.new("SurfaceAppearance")
+                sa.Parent = handle
+            end
+
+            sa.ColorMap = originalTex
+            sa.Color = colour
+            sa.AlphaMode = Enum.AlphaMode.Transparency
+            sa.Roughness = 0
+            sa.Metalness = 0.3
+
+            pcall(function()
+                sa.NormalMap = ""
+            end)
+
+            pcall(function()
+                sa.RoughnessMap = ""
+            end)
+
+            pcall(function()
+                sa.MetalnessMap = ""
+            end)
+
+            handle.TextureID = originalTex
+        else
+            local sa = handle:FindFirstChildOfClass("SurfaceAppearance")
+
+            if sa then
+                sa:Destroy()
+            end
+
+            handle.TextureID = ""
+        end
+    end
+
+    for _, d in ipairs(tool:GetDescendants()) do
+        if d:IsA("BasePart") and d ~= handle then
+            d.Color = colour
+
+        elseif d:IsA("Trail") then
+            d.Color = ColorSequence.new(colour)
+
+        elseif d:IsA("PointLight")
+            or d:IsA("SpotLight")
+            or d:IsA("SurfaceLight") then
+            d.Color = colour
+        end
+    end
+end
+
+-- ============================================================
+-- GUN DISPLAY FIX
+-- Finds the SINGLE GunDisplay closest to the equipped gun.
+-- Works whether GunDisplay itself is a Part, Model, or Folder.
+-- ============================================================
+
+local function getDisplayOrigin(obj)
+    if obj:IsA("BasePart") then
+        return obj.Position
+    end
+
+    if obj:IsA("Model") then
+        local ok, pivot = pcall(function()
+            return obj:GetPivot()
+        end)
+
+        if ok and pivot then
+            return pivot.Position
+        end
+    end
+
+    for _, d in ipairs(obj:GetDescendants()) do
+        if d:IsA("BasePart") then
+            return d.Position
+        end
+    end
+
+    return nil
+end
+
+local function getGunOrigin()
+    -- First try the currently equipped tool.
+    local character = LocalPlayer.Character
+
+    if character then
+        for _, obj in ipairs(character:GetChildren()) do
+            if obj:IsA("Tool") then
+                local variant = toolVariant(obj)
+
+                if variant == "matrix" or variant == "void" then
+                    local handle = obj:FindFirstChild("Handle")
+
+                    if handle and handle:IsA("BasePart") then
+                        return handle.Position
+                    end
+
+                    local pos = getDisplayOrigin(obj)
+
+                    if pos then
+                        return pos
+                    end
+                end
+            end
+        end
+
+        -- Fallback to character position.
+        local root = character:FindFirstChild("HumanoidRootPart")
+
+        if root and root:IsA("BasePart") then
+            return root.Position
+        end
+    end
+
+    return nil
+end
+
+local function tintDisplayObject(obj, colour)
+    if obj:IsA("BasePart") then
+        obj.Material = Enum.Material.SmoothPlastic
+        obj.Color = colour
+
+        if obj:IsA("MeshPart") and keep_tex and obj.TextureID ~= "" then
+            local originalTex = obj.TextureID
+            local sa = obj:FindFirstChildOfClass("SurfaceAppearance")
+
+            if not sa then
+                sa = Instance.new("SurfaceAppearance")
+                sa.Parent = obj
+            end
+
+            sa.ColorMap = originalTex
+            sa.Color = colour
+            sa.AlphaMode = Enum.AlphaMode.Transparency
+            sa.Roughness = 0
+            sa.Metalness = 0.3
+        end
+
+    elseif obj:IsA("Trail") then
+        obj.Color = ColorSequence.new(colour)
+
+    elseif obj:IsA("Beam") then
+        obj.Color = ColorSequence.new(colour)
+
+    elseif obj:IsA("ParticleEmitter") then
+        obj.Color = ColorSequence.new(colour)
+
+    elseif obj:IsA("PointLight")
+        or obj:IsA("SpotLight")
+        or obj:IsA("SurfaceLight") then
+        obj.Color = colour
+    end
+end
+
+local function tintWaistDisplays(colour)
+    local wd = workspace:FindFirstChild("WeaponDisplays")
+
+    if not wd then
+        return
+    end
+
+    local gunPosition = getGunOrigin()
+
+    if not gunPosition then
+        return
+    end
+
+    local closestDisplay = nil
+    local closestDistance = math.huge
+
+    -- Find the nearest GunDisplay.
+    for _, d in ipairs(wd:GetDescendants()) do
+        if d.Name == "GunDisplay" then
+            local position = getDisplayOrigin(d)
+
+            if position then
+                local distance = (position - gunPosition).Magnitude
+
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestDisplay = d
+                end
+            end
+        end
+    end
+
+    -- Tint ONLY the closest GunDisplay.
+    if closestDisplay then
+        tintDisplayObject(closestDisplay, colour)
+
+        for _, d in ipairs(closestDisplay:GetDescendants()) do
+            tintDisplayObject(d, colour)
+        end
+    end
+end
+
+local function applyGun()
+    local colour = gunColour()
+
+    if not colour then
+        return
+    end
+
+    local anyOn = gun.matrix_on or gun.void_on
+
+    if anyOn then
+        if LocalPlayer.Character then
+            for _, c in ipairs(LocalPlayer.Character:GetChildren()) do
+                if c:IsA("Tool") and shouldTintTool(c) then
+                    applyGunMesh(c, colour)
+                elseif c:IsA("Tool") then
+                    restoreOriginal(c)
+                end
+            end
+        end
+
+        local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
+
+        if bp then
+            for _, c in ipairs(bp:GetChildren()) do
+                if c:IsA("Tool") and shouldTintTool(c) then
+                    applyGunMesh(c, colour)
+                end
+            end
+        end
+
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("Tool") and (obj.Name == "Gun" or obj.Name == "gun") then
+                if shouldTintTool(obj) then
+                    applyGunMesh(obj, colour)
+                else
+                    restoreOriginal(obj)
+                end
+            end
+        end
+
+        -- NEW: only tint the nearest GunDisplay.
+        tintWaistDisplays(colour)
+
+    else
+        for obj in pairs(original) do
+            if obj:IsA("Tool") then
+                restoreOriginal(obj)
+            end
+        end
+    end
+end
+
+-- ============================================================
+-- BEAM
+-- ============================================================
+
+local function findBeam()
+    for _, c in ipairs({
+        LocalPlayer.Character,
+        LocalPlayer:FindFirstChild("Backpack")
+    }) do
+        if not c then
+            continue
+        end
+
+        local g = c:FindFirstChild("Gun")
+
+        if g and g:IsA("Tool") then
+            local h = g:FindFirstChild("Handle")
+
+            if h then
+                local b = h:FindFirstChild("CustomBeam")
+
+                if b and b:IsA("Beam") then
+                    return b
+                end
+            end
+        end
+    end
+end
+
+local function applyBeam()
+    if not beam.on then
+        return
+    end
+
+    local col = beamColour()
+
+    if not col then
+        return
+    end
+
+    local b = findBeam()
+
+    if b then
+        b.Color = ColorSequence.new(col)
+        b.LightEmission = 1
+    end
+end
+
+-- ============================================================
+-- BOMB
+-- ============================================================
+
+local function ownsBomb(bombName)
+    local containers = {
+        LocalPlayer.Character,
+        LocalPlayer:FindFirstChildOfClass("Backpack"),
+        LocalPlayer:FindFirstChildOfClass("PlayerGui"),
+    }
+
+    for _, c in ipairs(containers) do
+        if c then
+            for _, v in ipairs(c:GetDescendants()) do
+                if v.Name:lower() == bombName:lower() then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+local function tintBombPart(part, colour)
+    if part:IsA("Beam")
+        or part:IsA("Trail")
+        or part:IsA("ParticleEmitter") then
+
+        part.Color = ColorSequence.new(colour)
+        return
+    end
+
+    if not part:IsA("BasePart") then
+        return
+    end
+
+    part.Color = colour
+
+    for _, child in ipairs(part:GetChildren()) do
+        if child:IsA("SurfaceAppearance") then
+            pcall(function()
+                child.Color = colour
+            end)
+
+            if WHITE_ASSET_ID ~= "" then
+                pcall(function()
+                    child.ColorMap = WHITE_ASSET_ID
+                end)
+            end
+
+        elseif child:IsA("SpecialMesh") then
+            pcall(function()
+                child.VertexColor = Vector3.new(
+                    colour.R,
+                    colour.G,
+                    colour.B
+                )
+            end)
+        end
+    end
+end
+
+local function applyBomb()
+    if not bomb.on then
+        return
+    end
+
+    local colour = bombColour()
+
+    if not colour then
+        return
+    end
+
+    local haveFake = ownsBomb("FakeBomb")
+    local haveGold = ownsBomb("GoldBomb")
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        local n = obj.Name:lower()
+
+        local isFake = n:find("fakebomb") ~= nil
+        local isGold = n:find("goldbomb") ~= nil
+
+        if (isFake and haveFake) or (isGold and haveGold) then
+            if obj:IsA("BasePart") then
+                tintBombPart(obj, colour)
+
+            elseif obj:IsA("Model") or obj:IsA("Folder") then
+                for _, d in ipairs(obj:GetDescendants()) do
+                    if d:IsA("BasePart") then
+                        tintBombPart(d, colour)
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- ============================================================
+-- WIRING — GUN TAB
+-- ============================================================
+
+local function selectGunColour(key)
+    gun.colour = key
+    gun.rainbow = false
+
+    for k, b in pairs(ui.gunButtons) do
+        b.BackgroundColor3 = SWATCH[k]
+        b.BorderSizePixel = (k == key) and 2 or 0
+    end
+
+    ui.gunRainbow.BorderSizePixel = 0
+
+    applyGun()
+end
+
+for key, btn in pairs(ui.gunButtons) do
+    btn.MouseButton1Click:Connect(function()
+        selectGunColour(key)
+    end)
+end
+
+ui.gunRainbow.MouseButton1Click:Connect(function()
+    gun.rainbow = not gun.rainbow
+
+    ui.gunRainbow.BorderSizePixel = gun.rainbow and 2 or 0
+
+    if gun.rainbow then
+        for _, b in pairs(ui.gunButtons) do
+            b.BorderSizePixel = 0
+        end
+    end
+
+    applyGun()
+end)
+
+ui.matrixBtn.MouseButton1Click:Connect(function()
+    gun.matrix_on = not gun.matrix_on
+
+    ui.matrixBtn.Text =
+        "MatrixScope: " .. (gun.matrix_on and "ON" or "OFF")
+
+    ui.matrixBtn.BackgroundColor3 =
+        gun.matrix_on
+        and Color3.fromRGB(45, 100, 200)
+        or Color3.fromRGB(30, 30, 50)
+
+    applyGun()
+end)
+
+ui.voidBtn.MouseButton1Click:Connect(function()
+    gun.void_on = not gun.void_on
+
+    ui.voidBtn.Text =
+        "VoidScope: " .. (gun.void_on and "ON" or "OFF")
+
+    ui.voidBtn.BackgroundColor3 =
+        gun.void_on
+        and Color3.fromRGB(120, 45, 200)
+        or Color3.fromRGB(30, 30, 50)
+
+    applyGun()
+end)
+
+ui.texBtn.MouseButton1Click:Connect(function()
+    keep_tex = not keep_tex
+
+    ui.texBtn.Text =
+        "Detail: " .. (keep_tex and "KEEP" or "BLANKED")
+
+    ui.texBtn.BackgroundColor3 =
+        keep_tex
+        and Color3.fromRGB(30, 100, 60)
+        or Color3.fromRGB(160, 60, 60)
+
+    applyGun()
+end)
+
+-- ============================================================
+-- BEAM TAB
+-- ============================================================
+
+local function selectBeamColour(key)
+    beam.colour = key
+    beam.rainbow = false
+
+    for k, b in pairs(ui.beamButtons) do
+        b.BackgroundColor3 = SWATCH[k]
+        b.BorderSizePixel = (k == key) and 2 or 0
+    end
+
+    ui.beamRainbow.BorderSizePixel = 0
+
+    applyBeam()
+end
+
+for key, btn in pairs(ui.beamButtons) do
+    btn.MouseButton1Click:Connect(function()
+        selectBeamColour(key)
+    end)
+end
+
+ui.beamRainbow.MouseButton1Click:Connect(function()
+    beam.rainbow = not beam.rainbow
+
+    ui.beamRainbow.BorderSizePixel = beam.rainbow and 2 or 0
+
+    if beam.rainbow then
+        for _, b in pairs(ui.beamButtons) do
+            b.BorderSizePixel = 0
+        end
+    end
+
+    applyBeam()
+end)
+
+ui.beamToggle.MouseButton1Click:Connect(function()
+    beam.on = not beam.on
+
+    ui.beamToggle.Text =
+        "Change Beam Colour: " .. (beam.on and "ON" or "OFF")
+
+    ui.beamToggle.BackgroundColor3 =
+        beam.on
+        and Color3.fromRGB(80, 200, 255)
+        or Color3.fromRGB(30, 30, 50)
+
+    applyBeam()
+end)
+
+-- ============================================================
+-- BOMB TAB
+-- ============================================================
+
+local function selectBombColour(key)
+    bomb.colour = key
+    bomb.rainbow = false
+
+    for k, b in pairs(ui.bombButtons) do
+        b.BackgroundColor3 = SWATCH[k]
+        b.BorderSizePixel = (k == key) and 2 or 0
+    end
+
+    ui.bombRainbow.BorderSizePixel = 0
+
+    applyBomb()
+end
+
+for key, btn in pairs(ui.bombButtons) do
+    btn.MouseButton1Click:Connect(function()
+        selectBombColour(key)
+    end)
+end
+
+ui.bombRainbow.MouseButton1Click:Connect(function()
+    bomb.rainbow = not bomb.rainbow
+
+    ui.bombRainbow.BorderSizePixel = bomb.rainbow and 2 or 0
+
+    if bomb.rainbow then
+        for _, b in pairs(ui.bombButtons) do
+            b.BorderSizePixel = 0
+        end
+    end
+
+    applyBomb()
+end)
+
+ui.bombToggle.MouseButton1Click:Connect(function()
+    bomb.on = not bomb.on
+
+    ui.bombToggle.Text =
+        "Change Bomb Colours: " .. (bomb.on and "ON" or "OFF")
+
+    ui.bombToggle.BackgroundColor3 =
+        bomb.on
+        and Color3.fromRGB(200, 130, 40)
+        or Color3.fromRGB(30, 30, 50)
+
+    applyBomb()
+end)
+
+-- ============================================================
+-- LOOPS
+-- ============================================================
+
+local function hookChar(char)
+    char.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            task.wait(0.15)
+            applyGun()
+            applyBeam()
+        end
+    end)
+
+    task.wait(0.5)
+
+    applyGun()
+    applyBeam()
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+
+    if LocalPlayer.Character then
+        hookChar(LocalPlayer.Character)
+    end
+
+    applyBeam()
+end)
+
+if LocalPlayer.Character then
+    hookChar(LocalPlayer.Character)
+end
+
+local bp0 = LocalPlayer:FindFirstChildOfClass("Backpack")
+
+if bp0 then
+    bp0.ChildAdded:Connect(function()
+        task.wait(0.15)
+        applyGun()
+        applyBeam()
+    end)
+end
+
+RunService.RenderStepped:Connect(function(dt)
+    if gun.rainbow and (gun.matrix_on or gun.void_on) then
+        gun.hue = (gun.hue + dt * 0.35) % 1
+        applyGun()
+    end
+end)
+
+RunService.Heartbeat:Connect(function(dt)
+    if not beam.on then
+        return
+    end
+
+    if beam.rainbow then
+        beam.hue = (beam.hue + dt * 0.35) % 1
+    end
+
+    applyBeam()
+end)
+
+RunService.Heartbeat:Connect(function(dt)
+    if not bomb.on then
+        return
+    end
+
+    if bomb.rainbow then
+        bomb.hue = (bomb.hue + dt * 0.35) % 1
+    end
+
+    applyBomb()
+end)
